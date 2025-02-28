@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monbonlait-deployment
+  labels:
+    app: monbonlait
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: monbonlait
+  template:
+    metadata:
+      labels:
+        app: monbonlait
+    spec:
+      containers:
+      - name: monbonlait
+        image: ershadr/monbonlait:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monbonlait-service
+spec:
+  selector:
+    app: monbonlait
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80

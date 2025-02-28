@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mesbonslegumes-deployment
+  labels:
+    app: mesbonslegumes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mesbonslegumes
+  template:
+    metadata:
+      labels:
+        app: mesbonslegumes
+    spec:
+      containers:
+      - name: mesbonslegumes
+        image: ershadr/mesbonslegumes:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mesbonslegumes-service
+spec:
+  selector:
+    app: mesbonslegumes
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
