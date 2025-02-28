@@ -141,14 +141,13 @@ EXPOSE 80
 ```bash
 docker login
 ```
-🔹 Remplacez votre_utilisateur par votre identifiant Docker Hub
-Construisez et poussez les images une par une:
+🔹Construisez et poussez les images une par une:
 
 🌍 `MonBonLait`
 ```bash
 cd monbonlait
-docker build -t votre_utilisateur/monbonlait:latest .
-docker push votre_utilisateur/monbonlait:latest
+docker build -t ershadr/monbonlait:latest .
+docker push ershadr/monbonlait:latest
 cd ..
 ```
 
@@ -156,15 +155,15 @@ cd ..
 
 ```bash
 cd mesbonslegumes
-docker build -t votre_utilisateur/mesbonslegumes:latest .
-docker push votre_utilisateur/mesbonslegumes:latest
+docker build -t ershadr/mesbonslegumes:latest .
+docker push ershadr/mesbonslegumes:latest
 cd ..
 ```
 🍃 `MesBonsLegumesBio`
 ```bash
 cd mesbonslegumesbio
-docker build -t votre_utilisateur/mesbonslegumesbio:latest .
-docker push votre_utilisateur/mesbonslegumesbio:latest
+docker build -t ershadr/mesbonslegumesbio:latest .
+docker push ershadr/mesbonslegumesbio:latest
 cd ..
 ```
 4️⃣ Vérifier sur Docker Hub
@@ -200,7 +199,7 @@ spec:
     spec:
       containers:
       - name: monbonlait
-        image: votre_utilisateur/monbonlait:latest
+        image: ershadr/monbonlait:latest
         ports:
         - containerPort: 80
 ---
@@ -244,7 +243,7 @@ spec:
     spec:
       containers:
       - name: mesbonslegumes
-        image: votre_utilisateur/mesbonslegumes:latest
+        image: ershadr/mesbonslegumes:latest
         ports:
         - containerPort: 80
 ---
@@ -287,7 +286,7 @@ spec:
     spec:
       containers:
       - name: mesbonslegumesbio
-        image: votre_utilisateur/mesbonslegumesbio:latest
+        image: ershadr/mesbonslegumesbio:latest
         ports:
         - containerPort: 80
 ---
@@ -366,7 +365,35 @@ Appliquez-le :
 
 ```bash
 kubectl apply -f ingress.yaml
+
 ```
+
+- `apiVersion: networking.k8s.io/v1` → On utilise l'API Ingress de Kubernetes.
+- `kind: Ingress` → Cet objet définit une règle de routage HTTP.
+-` metadata.name: ecommerce-ingress `→ Le nom de cet objet Ingress est ecommerce-ingress.
+- `annotations.nginx.ingress.kubernetes.io/rewrite-target: /`
+ → Cette annotation permet de réécrire l'URL avant de l'envoyer aux Pods, en supprimant le préfixe du chemin.
+- Exemple :
+    - Requête http://mesbonslegumes.fr/bio
+    - Sans cette annotation : le service reçoit `/bio` et pourrait ne pas fonctionner correctement.
+    - Avec cette annotation : `/bio` est remplacé par` /`, ce qui correspond à index.html dans le Pod.
+
+- `host: monbonlait.fr` → Toutes les requêtes pour monbonlait.fr suivent cette règle.
+- `paths:` → Définit une liste de chemins pour ce domaine.
+- `path: / `→ Toute requête sur la racine (/) est dirigée vers un service.
+- `pathType: Prefix` → Toutes les URLs commençant par `/ `correspondent (exemple : /produits irait aussi ici).
+- `backend:`
+    - `service.name: monbonlait-service` → Le trafic est dirigé vers le Service `monbonlait-service`.
+    - `port.number: 80` → Le service écoute sur le port 80.
+
+### Fonctionnement du Routage Ingress
+L'Ingress utilise les règles de routage pour envoyer les requêtes vers le bon service.
+Voici comment on a défini les chemins (`path`) pour `mesbonslegumes.fr` :
+
+- http://mesbonslegumes.fr → dirigé vers le Service `mesbonslegumes-service` qui expose les Pods du site principal.
+- http://mesbonslegumes.fr/bio → dirigé vers le Service `mesbonslegumesbio-service` qui expose les Pods du site bio.
+
+
 6️⃣ Tester les accès
 
 Ajoutez les entrées suivantes dans votre /etc/hosts pour simuler un DNS local :
@@ -395,3 +422,52 @@ curl http://mesbonslegumes.fr/bio
 
 ![alt text](image-2.png)
 
+## Etape 6. Scaling de `monbonlait.fr`
+1️⃣ Augmentation du nombre de Pods
+Le nombre de Pods pour monbonlait.fr a été augmenté de 1 à 3 en modifiant le replicas dans le Deployment.
+2️⃣ Vérification de la répartition des requêtes
+Surveillance des logs de chaque Pod dans un terminal séparé avec :
+```bash
+kubectl logs -f pods/monbonlait-deployment-xxxxx --tail=10
+```
+Envoi de 10 requêtes HTTP vers monbonlait.fr avec :
+```bash
+for i in {1..10}; do curl -s http://monbonlait.fr; echo ""; done
+```
+Observation de la répartition des requêtes :
+- 3 requêtes ont été reçues par deux Pods.
+![alt text](image-4.png)
+![alt text](image-6.png)
+- 4 requêtes ont été reçues par le troisième Pod.
+![alt text](image-5.png)
+✅ Conclusion : La répartition des requêtes est bien gérée par Kubernetes, confirmant le bon fonctionnement du Load Balancing via le Service.
+
+## Etape 7. Question bonus :
+- Créer une nouvelle version de la boutique légumes bio et publiez-la dans une nouvelle version de votre image.
+- Appliquer la modification à votre déploiement.
+- Qu’observez vous sur la disponibilité du service pendant la mise à jour ?
+Pour mieux visualiser celà vous pouvez en parallèle de la mise à jour exécuter les commandes suivantes dans d’autres terminaux :  
+- `watch -n 1 -c kubectl get pods`
+- `watch -n 1 -c curl mesbonslegumes.fr/bio`
+
+1️⃣ Création et publication de la nouvelle version
+Ajout de la mention `version 2` dans le fichier `index.html` du site bio.
+Construction et publication de l’image mise à jour sur Docker Hub avec le tag `v2`.
+2️⃣ Déploiement de la nouvelle version
+Mise à jour du Deployment en remplaçant l'image par la version v2.
+Application de la mise à jour avec :
+```bash
+kubectl apply -f mesbonslegumesbio-deployment.yaml
+```
+3️⃣ Observation du déploiement sans interruption
+Surveillance du remplacement progressif des Pods :
+```bash
+watch -n 1 -c kubectl get pods
+```
+Vérification continue de l’accessibilité du service :
+```bash
+watch -n 1 -c curl mesbonslegumes.fr/bio
+```
+Les Pods ont été remplacés un par un, assurant une mise à jour sans interruption de service.
+
+✅ Conclusion : La mise à jour a été déployée de manière fluide grâce au rolling update géré automatiquement par Kubernetes.
