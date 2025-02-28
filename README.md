@@ -48,6 +48,19 @@ Permet d’accéder aux sites (`monbonlait.fr`,` mesbonslegumes.fr`) via localho
 ## Etape 3. Compléter le schéma avec des objets Kubernetes
 ![alt text](image.png)
 
+
+- Dans Kubernetes, les Pods sont éphémères.
+
+- Chaque fois qu’un Pod est redémarré, il obtient une nouvelle adresse IP.
+Sans un Service, on ne peut pas avoir une adresse stable pour notre application.
+
+- Un Service crée une adresse IP fixe qui redirige le trafic vers les Pods.
+- Il permet le Load Balancing entre plusieurs Pods (utile pour monbonlait.fr qui doit gérer plus de trafic).
+- Il est obligatoire pour que l'Ingress puisse router les requêtes vers les bons Pods.
+
+- Un ReplicaSet est responsable uniquement de maintenir un certain nombre de pods en fonctionnement.
+- Mais il ne permet pas de gérer les mises à jour ou les changements de version facilement.
+
 ## Etape 4. Nous allons créer trois images Docker basées sur NGINX
 - Chacune contenant une page HTML personnalisée pour chaque site:
 `monbonlait.fr` (Magasin de lait)
@@ -156,3 +169,229 @@ cd ..
 ```
 4️⃣ Vérifier sur Docker Hub
 Allez sur hub.docker.com et vérifiez que les trois images ont bien été publiées.
+
+## Étape 5. Déployer les images Docker dans Kubernetes avec Kind
+
+Maintenant que nous avons créé et publié nos images Docker, nous allons déployer les sites web sur Kubernetes en utilisant:
+
+- `Deployment` pour gérer les Pods et assurer leur disponibilité.
+- `Service` pour exposer les sites au réseau interne du cluster.
+- `Ingress` pour gérer les requêtes HTTP et rediriger vers les bons services.
+
+1️⃣ Déployer monbonlait.fr
+Créons un fichier `monbonlait-deployment.yaml` :
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monbonlait-deployment
+  labels:
+    app: monbonlait
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: monbonlait
+  template:
+    metadata:
+      labels:
+        app: monbonlait
+    spec:
+      containers:
+      - name: monbonlait
+        image: votre_utilisateur/monbonlait:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monbonlait-service
+spec:
+  selector:
+    app: monbonlait
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+```
+Appliquez-le :
+
+```bash
+kubectl apply -f monbonlait-deployment.yaml
+```
+2️⃣ Déployer mesbonslegumes.fr
+
+Créons un fichier `mesbonslegumes-deployment.yaml` :
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mesbonslegumes-deployment
+  labels:
+    app: mesbonslegumes
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mesbonslegumes
+  template:
+    metadata:
+      labels:
+        app: mesbonslegumes
+    spec:
+      containers:
+      - name: mesbonslegumes
+        image: votre_utilisateur/mesbonslegumes:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mesbonslegumes-service
+spec:
+  selector:
+    app: mesbonslegumes
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+```
+Appliquez-le :
+
+```bash
+kubectl apply -f mesbonslegumes-deployment.yaml
+```
+3️⃣ Déployer mesbonslegumes.fr/bio
+Créons un fichier` mesbonslegumesbio-deployment.yaml `:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mesbonslegumesbio-deployment
+  labels:
+    app: mesbonslegumesbio
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mesbonslegumesbio
+  template:
+    metadata:
+      labels:
+        app: mesbonslegumesbio
+    spec:
+      containers:
+      - name: mesbonslegumesbio
+        image: votre_utilisateur/mesbonslegumesbio:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mesbonslegumesbio-service
+spec:
+  selector:
+    app: mesbonslegumesbio
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+```
+Appliquez-le :
+
+```bash
+kubectl apply -f mesbonslegumesbio-deployment.yaml
+```
+
+4️⃣ Vérifier les déploiements
+Vérifiez si tout fonctionne :
+
+```bash
+kubectl get pods
+kubectl get services
+```
+Vous devriez voir 3 Deployments, 3 Services, et des Pods en cours d'exécution.
+
+5️⃣ Configurer Ingress pour gérer les requêtes HTTP
+
+Créons un fichier `ingress.yaml `:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: monbonlait.fr
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: monbonlait-service
+            port:
+              number: 80
+  - host: mesbonslegumes.fr
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mesbonslegumes-service
+            port:
+              number: 80
+  - host: mesbonslegumes.fr
+    http:
+      paths:
+      - path: /bio
+        pathType: Prefix
+        backend:
+          service:
+            name: mesbonslegumesbio-service
+            port:
+              number: 80
+```
+Appliquez-le :
+
+```bash
+kubectl apply -f ingress.yaml
+```
+6️⃣ Tester les accès
+
+Ajoutez les entrées suivantes dans votre /etc/hosts pour simuler un DNS local :
+
+```bash
+sudo nano /etc/hosts
+```
+Ajoutez :
+```bash
+127.0.0.1 monbonlait.fr
+127.0.0.1 mesbonslegumes.fr
+```
+Enregistrez et quittez.
+
+Puis testez :
+
+```bash
+curl http://monbonlait.fr
+curl http://mesbonslegumes.fr
+curl http://mesbonslegumes.fr/bio
+
+```
+![alt text](image-3.png)
+
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
